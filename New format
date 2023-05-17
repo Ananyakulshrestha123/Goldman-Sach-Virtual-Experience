@@ -1,0 +1,99 @@
+import dpkt
+import socket
+
+def connection_id_to_str(cid, v=4):
+    """This converts the connection ID cid which is a tuple of (source_ip_address, source_tcp_port, destination_ip_address,
+    destination_tcp_port) to a string. v is either 4 for IPv4 or 6 for IPv6"""
+    if v == 4:
+        src_ip_addr_str = socket.inet_ntoa(cid[0])
+        dst_ip_addr_str = socket.inet_ntoa(cid[2])
+        return src_ip_addr_str + ":" + str(cid[1]) + "<=>" + dst_ip_addr_str + ":" + str(cid[3])
+    elif v == 6:
+        src_ip_addr_str = socket.inet_ntop(socket.AF_INET6, cid[0])
+        dst_ip_addr_str = socket.inet_ntop(socket.AF_INET6, cid[2])
+        return src_ip_addr_str + "." + str(cid[1]) + "<=>" + dst_ip_addr_str + "." + str(cid[3])
+    else:
+        raise ValueError('Argument to connection_id_to_str must be 4 or 6, is %d' % v)
+
+
+def analyze_pcap_file(file_path):
+    """This function analyzes a pcap file and prints flow information"""
+    with open(file_path, 'rb') as f:
+        pcap = dpkt.pcap.Reader(f)
+        flow_info_list = []
+
+        flow_buckets = {}  # Dictionary to store flow buckets
+        first_ts = None  # Variable to store the timestamp of the first packet
+
+        for ts, buf in pcap:
+            if first_ts is None:
+                first_ts = ts
+
+            eth = dpkt.ethernet.Ethernet(buf)
+            if eth.type != dpkt.ethernet.ETH_TYPE_IP:
+                continue
+
+            ip = eth.data
+            if ip.p != dpkt.ip.IP_PROTO_TCP:
+                continue
+
+            tcp = ip.data
+            connection_id = (ip.src, tcp.sport, ip.dst, tcp.dport)
+            reverse_connection_id = (ip.dst, tcp.dport, ip.src, tcp.sport)
+
+            flow = connection_id_to_str(connection_id)
+            reverse_flow = connection_id_to_str(reverse_connection_id)
+
+            bucket_index = int((ts - first_ts) // 2)
+
+            if bucket_index in flow_buckets:
+                if flow in flow_buckets[bucket_index]:
+                    flow_buckets[bucket_index][flow].append((ts, buf, tcp.sport, tcp.dport, len(tcp.data), tcp.flags))
+                elif reverse_flow in flow_buckets[bucket_index]:
+                    flow_buckets[bucket_index][reverse_flow].append((ts, buf, tcp.sport, tcp.dport, len(tcp.data), tcp.flags))
+                else:
+                    flow_buckets[bucket_index][flow] = [(ts, buf, tcp.sport, tcp.dport, len(tcp.data), tcp.flags)]
+            else:
+                flow_buckets[bucket_index] = {flow: [(ts, buf, tcp.sport, tcp.dport, len(tcp.data), tcp.flags)]}
+
+        # Print flow buckets
+        for bucket_index, flows in flow_buckets.items():
+            total_packets = sum(len(packets) for packets in flows.values())
+            if total_packets < 20:
+                continue
+
+            for flow, packets in flows.items():
+                forward_packets = [p for p in packets if connection_id_to_str((ip.src, tcp.sport, ip.dst, tcp.dport)) == flow]
+                backward_packets = [p for p in packets if connection_id_to_str((ip.src, tcp.sport, ip.dst, tcp.dport)) != flow]
+                forward_bytes = sum(len(p[1]) for p in forward_packets)
+                backward_bytes = sum(len(p[1]) for p in backward_packets)
+                forward_interarrival_times = [p[0] - first_ts for p in forward_packets[1:]]
+                backward_interarrival_times = [p[0] - first_ts for p in backward_packets[1:]]
+                flow_interarrival_times = [p[0] - first_ts for p in packets[1:]]
+
+                # Prepare flow information list
+                flow_info = [
+                    bucket_index,
+                    flow,
+                    ts - first_ts if packets.index(packets[0]) == 0 else ts - first_ts,
+                    1 if connection_id_to_str((ip.src, tcp.sport, ip.dst, tcp.dport)) == flow else -1,
+                    len(tcp.data),
+                    tcp.flags,
+                    len(forward_packets),
+                    len(backward_packets),
+                    forward_bytes,
+                    backward_bytes,
+                    (forward_bytes + backward_bytes) / (ts - first_ts),
+                    forward_interarrival_times,
+                    backward_interarrival_times,
+                    flow_interarrival_times
+                ]
+
+                flow_info_list.append(flow_info)
+
+    return flow_info_list
+
+flow_info = analyze_pcap_file('E:\PPT Reader\http_ipv4_complex.cap')
+
+for packet_info in flow_info:
+    print(packet_info)
