@@ -1,0 +1,100 @@
+import dpkt
+import socket
+import math
+
+def connection_id_to_str(cid, v=4):
+    """This converts the connection ID cid which is a tuple of (source_ip_address, source_tcp_port, destination_ip_address,
+    destination_tcp_port) to a string. v is either 4 for IPv4 or 6 for IPv6"""
+    if v == 4:
+        src_ip_addr_str = socket.inet_ntoa(cid[0])
+        dst_ip_addr_str = socket.inet_ntoa(cid[2])
+        return src_ip_addr_str + ":" + str(cid[1]) + "<=>" + dst_ip_addr_str + ":" + str(cid[3])
+    elif v == 6:
+        src_ip_addr_str = socket.inet_ntop(socket.AF_INET6, cid[0])
+        dst_ip_addr_str = socket.inet_ntop(socket.AF_INET6, cid[2])
+        return src_ip_addr_str + "." + str(cid[1]) + "<=>" + dst_ip_addr_str + "." + str(cid[3])
+    else:
+        raise ValueError('Argument to connection_id_to_str must be 4 or 6, is %d' % v)
+
+def analyze_pcap_file(file_path):
+    with open(file_path, 'rb') as f:
+        pcap = dpkt.pcap.Reader(f)
+        idx = 0
+        flow_buckets = {}
+        for ts, buf in pcap:
+            if idx == 0:
+                first_ts = ts
+                idx = 1
+            timestamp = ts - first_ts
+            eth = dpkt.ethernet.Ethernet(buf)
+            if eth.type != dpkt.ethernet.ETH_TYPE_IP:
+                continue
+
+            ip = eth.data
+            if ip.p != dpkt.ip.IP_PROTO_TCP:
+                continue
+            total_duration = ts - first_ts
+            tcp = ip.data
+            connection_id = (ip.src, tcp.sport, ip.dst, tcp.dport)
+            reverse_connection_id = (ip.dst, tcp.dport, ip.src, tcp.sport)
+
+            flow = connection_id_to_str(connection_id)
+            reverse_flow = connection_id_to_str(reverse_connection_id)
+
+            if flow in flow_buckets:
+                flow_buckets[flow].append([timestamp, 1, len(tcp.data), 1 if tcp.flags & dpkt.tcp.TH_FIN else 0])
+            elif reverse_flow in flow_buckets:
+                flow_buckets[reverse_flow].append([timestamp, -1, len(tcp.data), 1 if tcp.flags & dpkt.tcp.TH_FIN else 0])
+            else:
+                flow_buckets[flow] = [[timestamp, 1, len(tcp.data), 1 if tcp.flags & dpkt.tcp.TH_FIN else 0]]
+
+        No_of_windows = math.ceil(total_duration / window_size)
+
+        window_buckets = {}
+        for i in range(No_of_windows):
+            window_buckets[i] = []
+
+        for flow, packets in flow_buckets.items():
+            flow_data = {
+                'flow_key': flow,
+                'total_forward_packets': 0,
+                'total_backward_packets': 0,
+                'total_bytes_per_sec': 0,
+                'forward_bytes': 0,
+                'backward_bytes': 0,
+                'forward_inter_arrival_time': [],
+                'backward_inter_arrival_time': [],
+                'flow_inter_arrival_time': []
+            }
+
+            for packet in packets:
+                timestamp, direction, data_length, fin_flag = packet
+
+                if direction == 1:
+                    flow_data['total_forward_packets'] += 1
+                    flow_data['forward_bytes'] += data_length
+                    flow_data['forward_inter_arrival_time'].append(timestamp)
+                elif direction == -1:
+                    flow_data['total_backward_packets'] += 1
+                    flow_data['backward_bytes'] += data_length
+                    flow_data['backward_inter_arrival_time'].append(timestamp)
+
+                flow_data['flow_inter_arrival_time'].append(timestamp)
+
+            # Determine the window index for the flow
+            window_index = math.floor(flow_data['flow_inter_arrival_time'][0] / window_size)
+            flow_data['flow_index'] = window_index
+
+            # Calculate the total bytes per second
+            flow_data['total_bytes_per_sec'] = (flow_data['forward_bytes'] + flow_data['backward_bytes']) / total_duration
+
+            # Append the flow data to the corresponding window
+            window_buckets[window_index].append(flow_data)
+
+        print(flow_buckets)
+        print("Total Duration:", total_duration)
+        print("Number of Windows:", No_of_windows)
+        print(window_buckets)
+
+window_size = 2
+analyze_pcap_file('E:\PPT Reader\http_ipv4_complex.cap')
