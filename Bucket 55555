@@ -186,3 +186,22 @@ def analyze_pcap_file(file_path):
 
 window_size = 2
 analyze_pcap_file('E:\PPT Reader\http_ipv4_complex.cap')
+
+
+
+#The condition if flow_data['is_active'] == 0 checks if the flow is currently inactive (not active).
+#If the flow is inactive, the following actions are performed:
+#flow_data['is_active'] = 1 sets the is_active flag to 1, indicating that the flow is now active.
+#The condition if (timestamp - flow_data['idle_start_time'] > 0) checks if there was an idle period before becoming active. If the time difference is greater than 0, it means there was an idle period.
+#Inside the above condition, the idle duration is calculated by subtracting flow_data['idle_start_time'] from the current timestamp and appended to flow_data['idle'].
+#flow_data['buffer_time'] = timestamp updates the buffer_time to the current timestamp.
+#flow_data['active_start_time'] = timestamp updates the active_start_time to the current timestamp.
+#If the flow is already active (flow_data['is_active'] != 0), the following actions are performed:
+#flow_data['buffer_time'] = timestamp updates the buffer_time to the current timestamp.
+#The subsequent code snippet iterates over the window_buckets and processes each flow within each window:
+#The condition if hard_timeout < window_size*(idx+1) - flow_data['buffer_time'] checks if a hard timeout has occurred within the current window.
+#If the hard timeout condition is met, the active duration is calculated by subtracting flow_data['active_start_time'] from the current timestamp, and it is appended to flow_data['active'].
+#Otherwise, if the hard timeout condition is not met, the active duration is calculated as window_size*(idx+1) - flow_data['active_start_time'].
+#In both cases, the idle duration is calculated as window_size*(idx+1) - hard_timeout - flow_data['buffer_start'] and appended to flow_data['idle'].
+
+
