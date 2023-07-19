@@ -1,0 +1,47 @@
+import os
+import dpkt
+import csv
+
+def extract_packet_info(pcap_file):
+    packet_info_list = []
+    with open(pcap_file, 'rb') as f:
+        pcap = dpkt.pcap.Reader(f)
+        for timestamp, buf in pcap:
+            eth_frame = dpkt.ethernet.Ethernet(buf)
+
+            # Check if the frame contains IP (Internet Protocol) data
+            if isinstance(eth_frame.data, dpkt.ip.IP):
+                ip_packet = eth_frame.data
+                payload_size = len(ip_packet.data)
+                source_ip = dpkt.utils.inet_to_str(ip_packet.src)
+                destination_ip = dpkt.utils.inet_to_str(ip_packet.dst)
+
+                packet_info = {
+                    'Timestamp': timestamp,
+                    'Source IP': source_ip,
+                    'Destination IP': destination_ip,
+                    'Payload Size': payload_size
+                }
+                packet_info_list.append(packet_info)
+
+    return packet_info_list
+
+def write_to_csv(output_csv, packet_info_list):
+    with open(output_csv, 'w', newline='') as csvfile:
+        fieldnames = ['Timestamp', 'Source IP', 'Destination IP', 'Payload Size']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(packet_info_list)
+
+if __name__ == "__main__":
+    folder_path = "path/to/folder"  # Replace this with the path to the folder containing pcap files
+    output_csv = "output.csv"       # Replace this with the desired output CSV file name
+
+    all_packet_info = []
+    for file in os.listdir(folder_path):
+        if file.endswith(".pcap"):
+            pcap_file = os.path.join(folder_path, file)
+            packet_info = extract_packet_info(pcap_file)
+            all_packet_info.extend(packet_info)
+
+    write_to_csv(output_csv, all_packet_info)
