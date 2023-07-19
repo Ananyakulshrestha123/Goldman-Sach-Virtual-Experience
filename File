@@ -1,0 +1,45 @@
+import csv
+import dpkt
+
+def create_pcap(csv_file, pcap_file):
+    with open(pcap_file, 'wb') as pcap_writer:
+        writer = dpkt.pcap.Writer(pcap_writer)
+        with open(csv_file, 'r') as csv_file:
+            csv_reader = csv.DictReader(csv_file)
+            for row in csv_reader:
+                # Replace these fields with appropriate column names from your CSV file
+                source_ip = row['source_ip']
+                destination_ip = row['destination_ip']
+                timestamp = float(row['timestamp'])  # Assuming the timestamp is a float in the CSV
+
+                # Create an Ethernet frame with IP and TCP/UDP layers
+                eth_frame = dpkt.ethernet.Ethernet()
+                eth_frame.src = dpkt.compat.unhexlify('001122334455')  # Replace with the source MAC address
+                eth_frame.dst = dpkt.compat.unhexlify('aabbccddeeff')  # Replace with the destination MAC address
+
+                ip_packet = dpkt.ip.IP()
+                ip_packet.src = dpkt.compat.ip_int_to_packed(int(source_ip))  # Convert source IP to bytes
+                ip_packet.dst = dpkt.compat.ip_int_to_packed(int(destination_ip))  # Convert dest. IP to bytes
+                ip_packet.p = dpkt.ip.IP_PROTO_TCP  # Change to dpkt.ip.IP_PROTO_UDP for UDP
+
+                tcp_packet = dpkt.tcp.TCP()  # Replace with dpkt.udp.UDP() for UDP
+                tcp_packet.sport = 12345  # Set source port
+                tcp_packet.dport = 80  # Set destination port
+                tcp_packet.seq = 0
+                tcp_packet.ack = 0
+                tcp_packet.flags = dpkt.tcp.TH_SYN
+                tcp_packet.data = b'Hello, world!'  # Replace with your payload data
+
+                ip_packet.data = tcp_packet
+                eth_frame.data = ip_packet
+
+                # Convert the timestamp to a Unix timestamp in microseconds
+                timestamp = int(timestamp * 1000000)
+
+                # Write the packet to the pcap file
+                writer.writepkt(eth_frame, ts=timestamp)
+
+if __name__ == "__main__":
+    csv_file_path = "your_csv_file.csv"  # Replace with the path to your CSV file
+    pcap_file_path = "output.pcap"  # Replace with the desired output pcap file path
+    create_pcap(csv_file_path, pcap_file_path)
