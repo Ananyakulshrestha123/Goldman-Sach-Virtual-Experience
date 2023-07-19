@@ -45,3 +45,29 @@ if __name__ == "__main__":
             all_packet_info.extend(packet_info)
 
     write_to_csv(output_csv, all_packet_info)
+
+
+
+import dpkt
+
+def get_payload_size_from_pcap(pcap_file):
+    payload_sizes = []
+    
+    with open(pcap_file, 'rb') as f:
+        pcap = dpkt.pcap.Reader(f)
+        for timestamp, buf in pcap:
+            # Parse the Ethernet frame
+            eth_frame = dpkt.ethernet.Ethernet(buf)
+
+            # Check if the frame contains IP (Internet Protocol) data
+            if isinstance(eth_frame.data, dpkt.ip.IP):
+                payload_size = len(eth_frame.data.data)
+                payload_sizes.append(payload_size)
+
+    return payload_sizes
+
+if __name__ == "__main__":
+    input_pcap_file = "input.pcap"  # Replace this with the path to your input pcap file
+
+    payload_sizes = get_payload_size_from_pcap(input_pcap_file)
+    print("Payload sizes of packets:", payload_sizes)
